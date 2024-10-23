@@ -5,7 +5,7 @@ const MOBILE_NET_INPUT_HEIGHT = 224;
 const MOBILE_NET_INPUT_WIDTH = 224;
 const STOP_DATA_GATHER = -1;
 
-export const CLASS_NAMES = ["phone", "hand"];
+export const CLASS_NAMES = ["Object 1", "Object 2"];
 
 function createModel(classNames: string[]) {
   // Initialize a new sequential model
@@ -90,6 +90,7 @@ export function useTensorflow(
   const requestRef = useRef<number>();
   const [gatherDataState, setGatherDataState] = useState(STOP_DATA_GATHER);
   const [predict, setPredict] = useState(false);
+  const [train, setTrain] = useState(false);
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [featureModel, setFeatureModel] = useState<tf.GraphModel>();
   const [model, setModel] = useState<tf.Sequential>();
@@ -174,19 +175,28 @@ export function useTensorflow(
       const highestIndexTensor = prediction.argMax();
       const highestIndex = highestIndexTensor.arraySync() as number;
       const predictionArray = prediction.arraySync() as number[];
-      const predictText = "Prediction: " + CLASS_NAMES[highestIndex] +
-        " with " +
-        Math.floor(predictionArray[highestIndex] * 100) + "% confidence";
+      const highestConfidence = predictionArray[highestIndex];
 
-      setStatusText(predictText);
+      // Set a confidence threshold
+      const confidenceThreshold = 0.95;
+
+      if (highestConfidence >= confidenceThreshold) {
+        const predictText = "Prediction: " + CLASS_NAMES[highestIndex] +
+          " with " +
+          Math.floor(highestConfidence * 100) + "% confidence";
+        setStatusText(predictText);
+      } else {
+        setStatusText("...thinking");
+      }
     });
 
     requestRef.current = globalThis.requestAnimationFrame(predictLoop);
   };
 
-  const trainAndPredict = async () => {
+  const startTraining = async () => {
     if (!model) return;
     setPredict(false);
+    setStatusText("Training...");
 
     // Shuffle the training data
     tf.util.shuffleCombo(trainingDataInputs, trainingDataOutputs);
@@ -207,7 +217,8 @@ export function useTensorflow(
     oneHotOutputs.dispose();
     inputsAsTensor.dispose();
 
-    setPredict(true);
+    setStatusText("Training complete");
+    setTrain(false);
   };
 
   useEffect(() => {
@@ -216,10 +227,9 @@ export function useTensorflow(
 
       // Warm up the model by passing zeros through it once.
       tf.tidy(function () {
-        const answer = mobilenet.predict(
+        mobilenet.predict(
           tf.zeros([1, MOBILE_NET_INPUT_HEIGHT, MOBILE_NET_INPUT_WIDTH, 3]),
         );
-        console.log(answer);
       });
 
       setFeatureModel(mobilenet);
@@ -258,6 +268,10 @@ export function useTensorflow(
   }, [examplesCount]);
 
   useEffect(() => {
+    if (train) startTraining();
+  }, [train]);
+
+  useEffect(() => {
     if (predict) predictLoop();
 
     // Cleanup function to stop the loop when conditions change
@@ -277,6 +291,8 @@ export function useTensorflow(
     reset,
     statusText,
     predict,
-    trainAndPredict,
+    train,
+    setTrain,
+    setPredict,
   };
 }

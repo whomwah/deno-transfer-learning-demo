@@ -12,7 +12,7 @@ export function Button(props: JSX.HTMLAttributes<HTMLButtonElement>) {
       class={mergeClassNames(
         "px-2 py-1 border-gray-500 border-2 rounded bg-white hover:bg-gray-200 transition-colors",
         props.disabled ? "opacity-50 cursor-not-allowed" : "",
-        typeof props.class === "string" ? props.class : ""
+        typeof props.class === "string" ? props.class : "",
       )}
       disabled={!IS_BROWSER || props.disabled}
     />

@@ -24,7 +24,6 @@ function enableCam(
       if (wc.current) {
         wc.current.srcObject = stream;
         wc.current.addEventListener("loadeddata", function () {
-          console.log("Video playing");
           setVideoPlaying(true);
         });
       }
@@ -43,8 +42,10 @@ export default function Demo() {
     setVideoPlaying,
     reset,
     statusText,
-    trainAndPredict,
-    predict
+    train,
+    setTrain,
+    predict,
+    setPredict,
   } = useTensorflow(
     CLASS_NAMES,
     wc,
@@ -59,26 +60,37 @@ export default function Demo() {
   return (
     <div class="flex gap-8 py-6">
       <div>
-        <p class="mb-4">Loading{featureModel ? " complete" : "..."}</p>
+        <div class="flex items-center mb-1">
+          <span
+            className={`inline-block w-2.5 h-2.5 rounded-full ${
+              featureModel ? "bg-green-500" : "bg-red-500"
+            }`}
+          />
+          {featureModel && <span class="text-xs ml-1">ON AIR</span>}
+        </div>
         <Webcam wcRef={wc} />
         <div class="space-x-4 mb-6">
+          {CLASS_NAMES.map((klass: string, index: number) => (
+            <Button
+              onClick={() => gatherDataForClass(index)}
+              disabled={isDisabled(index)}
+            >
+              {klass}
+            </Button>
+          ))}
           <Button
-            onClick={() => gatherDataForClass(0)}
-            disabled={isDisabled(0)}
-          >
-            Phone
-          </Button>
-          <Button
-            onClick={() => gatherDataForClass(1)}
-            disabled={isDisabled(1)}
-          >
-            Hand
-          </Button>
-          <Button
-            onClick={() => trainAndPredict()}
+            onClick={() => setTrain(true)}
+            disabled={train}
             class="border-green-500 hover:bg-green-200"
           >
-            Train and Predict
+            Start Training
+          </Button>
+          <Button
+            disabled={train && predict}
+            onClick={() => setPredict(true)}
+            class="border-green-500 hover:bg-green-200"
+          >
+            Start Prediction
           </Button>
           <Button
             onClick={() => reset()}
