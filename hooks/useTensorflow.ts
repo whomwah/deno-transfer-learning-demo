@@ -12,7 +12,9 @@ function createModel(classNames: string[]) {
   const model = tf.sequential();
 
   // Add a dense layer with specified input shape, units, and ReLU activation
-  model.add(tf.layers.dense({ inputShape: [1024], units: 128, activation: "relu" }));
+  model.add(
+    tf.layers.dense({ inputShape: [1024], units: 128, activation: "relu" }),
+  );
 
   // Add a dense layer with units equal to classNames length and softmax activation
   model.add(
@@ -55,15 +57,32 @@ function calculateFeaturesOnCurrentFrame(
       [MOBILE_NET_INPUT_HEIGHT, MOBILE_NET_INPUT_WIDTH],
       true,
     );
-    const normalizedTensorFrame = resizedTensorFrame.div(255)
-    const prediction = mobilenet.predict(
-      normalizedTensorFrame.expandDims()
-    ) as tf.Tensor;
+    const normalizedTensorFrame = resizedTensorFrame.div(255);
+    const prediction = (mobilenet.predict(
+      normalizedTensorFrame.expandDims(),
+    ) as tf.Tensor).squeeze();
 
-    return prediction.squeeze();
+    return prediction;
   });
 }
 
+/**
+ * Custom hook to manage TensorFlow operations for a webcam-based machine learning model.
+ *
+ * @param {string[]} classNames - Array of class names for the model.
+ * @param {Ref<HTMLVideoElement>} wcRef - Reference to the HTML video element.
+ *
+ * @returns {Object} - An object containing various states and functions to manage the TensorFlow model.
+ * @property {tf.GraphModel | undefined} featureModel - The loaded MobileNet feature model.
+ * @property {tf.Sequential | undefined} model - The custom model created for training and prediction.
+ * @property {number} gatherDataState - The current state of data gathering.
+ * @property {Function} gatherDataForClass - Function to start or stop gathering data for a specific class.
+ * @property {Function} setVideoPlaying - Function to set the video playing state.
+ * @property {Function} reset - Function to reset the training data and states.
+ * @property {string} statusText - The current status text for display.
+ * @property {boolean} predict - Boolean indicating whether the model is in prediction mode.
+ * @property {Function} trainAndPredict - Function to train the model and start prediction.
+ */
 export function useTensorflow(
   classNames: string[],
   wcRef: Ref<HTMLVideoElement>,
@@ -81,37 +100,31 @@ export function useTensorflow(
   const [examplesCount, setExamplesCount] = useState<number[]>([]);
   const [statusText, setStatusText] = useState("");
 
-  const addTrainingDataInputs = (imageFeatures: tf.Tensor) => {
+  // Function to add training data inputs and outputs
+  const addTrainingData = (imageFeatures: tf.Tensor, state: number) => {
     setTrainingDataInputs((prevInputs) => [...prevInputs, imageFeatures]);
+    setTrainingDataOutputs((prevOutputs) => [...prevOutputs, state]);
   };
 
-  const addTrainingDataOutputs = (state: number) => {
-    setTrainingDataOutputs((prevInputs) => [...prevInputs, state]);
-  };
-
+  // Function to update status text
   const updateStatusText = () => {
-    let newStatusText = "No data collected";
-
-    if (examplesCount.length > 0) {
-      newStatusText = "";
-
-      for (let n = 0; n < CLASS_NAMES.length; n++) {
-        newStatusText += `${CLASS_NAMES[n]} data count: ${examplesCount[n]}. `;
-      }
+    if (examplesCount.length === 0) {
+      setStatusText("No data collected");
+      return;
     }
+
+    const newStatusText = CLASS_NAMES.map(
+      (name, index) => `${name} data count: ${examplesCount[index]}.`,
+    ).join(" ");
 
     setStatusText(newStatusText);
   };
 
+  // Function to update examples count
   const updateExamplesCount = (gatherDataState: number) => {
     setExamplesCount((prevCounts) => {
       const newCounts = [...prevCounts];
-      // Initialize array index element if currently undefined
-      if (newCounts[gatherDataState] === undefined) {
-        newCounts[gatherDataState] = 0;
-      }
-      // Increment counts of examples for user interface to show
-      newCounts[gatherDataState]++;
+      newCounts[gatherDataState] = (newCounts[gatherDataState] || 0) + 1;
       return newCounts;
     });
   };
@@ -120,9 +133,7 @@ export function useTensorflow(
     setPredict(false);
     setExamplesCount([]);
 
-    for (let i = 0; i < trainingDataInputs.length; i++) {
-      trainingDataInputs[i].dispose();
-    }
+    trainingDataInputs.forEach((tensor) => tensor.dispose());
 
     setTrainingDataInputs([]);
     setTrainingDataOutputs([]);
@@ -143,24 +154,26 @@ export function useTensorflow(
     // Ensure tensors are cleaned up.
     const imageFeatures = calculateFeaturesOnCurrentFrame(wcRef, featureModel);
 
-    addTrainingDataInputs(imageFeatures);
-    addTrainingDataOutputs(gatherDataState);
+    addTrainingData(imageFeatures, gatherDataState);
     updateExamplesCount(gatherDataState);
 
     requestRef.current = globalThis.requestAnimationFrame(dataGatherLoop);
   };
 
   const predictLoop = () => {
-    if (!wcRef.current || !featureModel) return;
+    if (!wcRef.current || !featureModel || !model) return;
 
     tf.tidy(function () {
-      const prediction = calculateFeaturesOnCurrentFrame(
+      const imageFeatures = calculateFeaturesOnCurrentFrame(
         wcRef,
         featureModel,
       );
+      const prediction = (model.predict(
+        imageFeatures.expandDims(),
+      ) as tf.Tensor).squeeze();
       const highestIndexTensor = prediction.argMax();
-      const highestIndex = highestIndexTensor.arraySync();
-      const predictionArray = prediction.arraySync();
+      const highestIndex = highestIndexTensor.arraySync() as number;
+      const predictionArray = prediction.arraySync() as number[];
       const predictText = "Prediction: " + CLASS_NAMES[highestIndex] +
         " with " +
         Math.floor(predictionArray[highestIndex] * 100) + "% confidence";
